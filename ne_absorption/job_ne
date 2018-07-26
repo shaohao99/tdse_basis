@@ -1,0 +1,20 @@
+#!/bin/tcsh
+#PBS -q workq
+#PBS -A loni_nnlm6
+#PBS -M shchen@phys.lsu.edu
+#PBS -m ae
+#PBS -l nodes=1:ppn=8
+#PBS -l walltime=00:05:00
+#PBS -j oe
+#PBS -N ne_sap
+
+set WORK_DIR = /home/shaohao/program-basis/ne_absorption
+set EXEC = tdse_grasp
+
+set NPROCS = `wc -l $PBS_NODEFILE |gawk '//{print $1}'`
+
+cd $WORK_DIR
+rm ne_test/*
+
+mpirun -machinefile $PBS_NODEFILE -np $NPROCS $EXEC 
+

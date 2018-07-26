@@ -1,0 +1,18 @@
+#!/bin/tcsh
+#PBS -q workq
+#PBS -A loni_nnlm6
+#PBS -M shchen@phys.lsu.edu
+#PBS -m ae
+#PBS -l nodes=1:ppn=8
+#PBS -l walltime=16:00:00
+#PBS -j oe
+#PBS -N dme
+
+set WORK_DIR = /home/shaohao/program-basis/run-basis
+
+set NPROCS = `wc -l $PBS_NODEFILE |gawk '//{print $1}'`
+
+cd $WORK_DIR
+
+mpirun -machinefile $PBS_NODEFILE -np $NPROCS main-dme
+

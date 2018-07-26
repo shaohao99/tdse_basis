@@ -1,0 +1,2 @@
+set NPROCS = `wc -l $PBS_NODEFILE |gawk '//{print $1}'`
+mpirun -machinefile $PBS_NODEFILE -np $NPROCS main-dme

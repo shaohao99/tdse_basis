@@ -1,0 +1,284 @@
+#include "BasisPropagate.h"
+#include "utils.h"
+#include <math.h>
+#include <complex>
+#define complex complex<double>
+#include "constant.h"
+
+#include <gsl/gsl_sf_hyperg.h>
+#include <gsl/gsl_sf_laguerre.h>
+#include <gsl/gsl_sf_coulomb.h>
+#include <gsl/gsl_sf_legendre.h>
+#include <gsl/gsl_sf_coupling.h>
+
+//#include "petscnpsf.h"  // should be before "#define complexd complexd<double>"
+
+#include <opari_omp.h>
+
+using namespace std;
+
+namespace Basis_Propagate{
+
+  int index3( int k , int j , int i, int nj, int ni )
+  {
+
+    int index=( k*nj + j )*ni + i;
+    return index;
+
+  }
+
+  int index2( int a , int b, int nb )
+  {
+    //return a*nb + b;
+    int index=a;
+    index*=nb;
+    index+=b;
+    return index;
+  }
+
+
+ void Spherical_grids ( double R0, double dr, double dtheta, double dphi, vector<double> &r, vector<double> &theta, vector<double> &phi)
+ {
+
+   int nr = int(R0/dr);
+   int ntheta = int(pi/dtheta)+1;
+   int nphi = int(2.*pi/dphi)+1;
+   cout<<nr<<'\t'<<ntheta<<'\t'<<nphi<<endl;
+
+   r.resize(nr);
+   theta.resize(ntheta);
+   phi.resize(nphi);
+
+   for(int i=0; i<nr; i++) r[i] = (i+0.1)*dr;  // avoid r=0
+   for(int i=0; i<ntheta; i++) theta[i] = i*dtheta;
+   for(int i=0; i<nphi; i++) phi[i] = i*dphi;
+
+ }
+
+
+ void Basis1e_bound (double r, double theta, double phi, int n, int l_max, double Z, vector<complex> &psi)
+ {
+
+   double x = cos(theta);
+   int l_number = l_max+1;
+   int m_number = l_number*l_number;
+   psi.resize(l_number*m_number);
+   int index_m=0;
+
+   for(int l=0; l< l_number; l++){
+
+     double R_nl = gsl_sf_hydrogenicR(n, l, Z, r);  // stable and correct. Z=1 for hygrogen atom
+ 
+     for(int m=-l; m<= l; m++){
+
+       double P_lm = gsl_sf_legendre_sphPlm (l, m, x );
+       complex Y_lm = P_lm * exp(I*double(m)*phi);
+
+       psi[index2(index_m,l,l_number)] = R_nl * Y_lm;
+       index_m += 1;
+     }
+   }
+
+ }
+
+ void Basis1e_continuum (double r, double theta, double phi, double k, int l_max, double Z, vector<complex> &psi)
+ {
+ 
+   double xx = r*k;
+   double eta = -1./k;
+   int l_number = l_max+1;
+   double fc_array[l_number];
+   double F_exponent[l_number];
+   int cwf_F = gsl_sf_coulomb_wave_F_array (0., l_max, eta, xx, fc_array, F_exponent );
+
+   double x = cos(theta);
+   int m_number = l_number*l_number;
+   psi.resize(l_number*m_number);
+   int index_m=0;
+
+   for(int l=0; l< l_number; l++){
+
+     for(int m=-l; m<= l; m++){
+     
+       double P_lm = gsl_sf_legendre_sphPlm (l, m, x );
+       complex Y_lm = P_lm * exp(I*double(m)*phi);
+       
+       psi[index2(index_m,l,l_number)] = fc_array[l] * Y_lm;
+       index_m += 1;
+
+     }
+   }
+
+ }
+
+
+ void Basis1e_bound_m0 (double r, double theta, int n, int l_max, double Z, vector<double> &psi)
+ {
+
+   double x = cos(theta);
+   int l_number = l_max+1;
+   psi.resize(l_number);
+
+   for(int l=0; l< l_number; l++){
+     double R_nl = gsl_sf_hydrogenicR(n, l, Z, r);  // stable and correct. Z=1 for hygrogen atom
+     double Y_lm = gsl_sf_legendre_sphPlm (l, 0, x );
+     psi[l] = R_nl * Y_lm;
+   }
+
+ }
+
+ void Basis1e_continuum_m0 (double r, double theta, double k, int l_max, double Z, vector<double> &psi)
+ {
+
+   double xx = r*k;
+   double eta = -1./k;
+   int l_number = l_max+1;
+   double fc_array[l_number];
+   double F_exponent[l_number];
+   int cwf_F = gsl_sf_coulomb_wave_F_array (0., l_max, eta, xx, fc_array, F_exponent );
+
+   double x = cos(theta);
+   psi.resize(l_number);
+
+   for(int l=0; l< l_number; l++){
+       double Y_lm = gsl_sf_legendre_sphPlm (l, 0, x );
+       psi[l] = fc_array[l] * Y_lm;
+   }
+
+ }
+
+
+ void DME_linear (vector<double> r, int n_max, double k_min, double k_max, double dk, vector<double> psi, vector<double> &H_dipole)
+ {
+
+   int nr = r.size(); 
+   double dr = r[2]-r[1];
+   double Z=1;
+
+   int n_bound = n_max/2*(n_max+1);
+   int n_k = int( (k_max - k_min)/dk ) + 1;
+   int lk_max = n_max;  // maximum l of continuum states
+   int n_continuum = n_k*lk_max;
+   int n_obt = n_bound + n_continuum;
+   vector< vector<double> > R_obt(n_obt, nr);
+
+// calculate bound radial functions and save in memory
+   int index_obt = 0;
+   for(int n=1; n<=n_max; n++)
+     for(int l=0; l<n; l++){
+
+       for(int i=0; i<nr; i++){
+         R_obt[index_obt][i] = gsl_sf_hydrogenicR(n, l, Z, r[i]);  // stable and correct. Z=1 for hygrogen atom
+       }
+       index_obt++;
+   }
+
+// calculate continuum radial functions and save in memory --> file
+   int l_number = lk_max+1;
+   vector<double> k(n_k);
+   double fc_array[l_number];
+   double F_exponent[l_number];
+
+   for(int n=0; n<n_k; n++){
+
+     k[n]=(n+0.01)*dk;  // momuntum grids
+     double eta = -1./k[n];    // H atom
+
+     for(int i=0; i<nr; i++){
+       double xx = r[i]*k[n];
+       int cwf_F = gsl_sf_coulomb_wave_F_array (0., lk_max, eta, xx, fc_array, F_exponent );
+       for(int l=0; l<l_number; l++){
+         R_obt[index_obt+l][i] = fc_array[l];  // save in the same array with bound states
+       }
+     }
+
+     index_obt += lk_max;
+   }
+
+// calculate matrix elements
+// initial data 
+   H_dipole.resize(n_obt*n_obt/2);  // only save nonzero elements in up-triangle region
+   int index=0;
+   double fac = 8.* pow(pi,1.5) / sqrt(3.);  // from integration of phi, and part of integration of theta
+   int index_obt1=0;   // initial 0 before iteration of n1, l1
+
+   for(int n1=1; n1<=n_max; n1++){   // n1, l1 for bound states
+       for(int l1=0; l1<n1; l1++){
+
+       int index_obt2=0;   // initial 0 before iteration of n2, l2
+       for(int n2=1; n2<=n_max; n2++){   // 1. n2, l2 for bound states, bound-bound, including up and down triangle
+         for(int l2=0; l2<n2; l2++){
+            if(n1==n2 && l1==l2) {H_dipole[index] = -0.5/(n1*n1);  index++; }  //diagonal 
+            if(l2==l1+1 || l2==l1-1){    // off-diagonal, dipole selection rule
+               double c3j = gsl_sf_coupling_3j(2*l2, 1, 2*l1, 0, 0, 0); // integration of theta
+               double fac_l = c3j*c3j;
+               double fac_r=0.;   
+               for(int i=0; i<nr; i++){    // integration of r
+                   fac_r += R_obt[index_obt2][i] * r[i] * R_obt[index_obt1][i] ;
+               }
+               fac_r *= dr;
+               H_dipole[index] = fac*fac_l*fac_r;
+               index++;
+            }   // end of election rule
+            index_obt2++;
+         } // end of l2
+       }  // end of n2 for bound states
+
+       for(int n2=0; n2<n_k; n2++){   // 2. n2, l2 for continuum states, bound-free
+         for(int l2=0; l2<l_number; l2++){
+            if(l2==l1+1 || l2==l1-1){    // off-diagonal, dipole selection rule
+               double c3j = gsl_sf_coupling_3j(2*l2, 1, 2*l1, 0, 0, 0); // integration of theta
+               double fac_l = c3j*c3j;
+               double fac_r=0.; 
+               for(int i=0; i<nr; i++){    // integration of r
+                   fac_r += R_obt[index_obt2][i] * r[i] * R_obt[index_obt1][i] ;
+               }
+               fac_r *= dr;
+               H_dipole[index] = fac*fac_l*fac_r;
+               index++;
+            }   // end of election rule
+            index_obt2++;    // accumulated from bound states
+         } // end of l2
+       }  // end of n2 for continuum states
+
+       index_obt1++;
+     }  // end of l1
+   }  // end of n1 for bound states
+
+
+   for(int n1=0; n1<n_k; n1++){   // 3. n1, l1 for continuum states, free-free
+     for(int l1=0; l1<l_number; l1++){
+
+       int index_obt2=n_bound;   // initial value = n_bound  before iteration of n2, l2 for continuum
+       for(int n2=0; n2<n_k; n2++){   // n2, l2 for continuum states, free-free
+         for(int l2=0; l2<l_number; l2++){
+            if(n1==n2 && l1==l2) { H_dipole[index] = 0.5*k[n1]*k[n1];  index++; }  //diagonal 
+            if(l2==l1+1 || l2==l1-1){    // off-diagonal, dipole selection rule
+               double c3j = gsl_sf_coupling_3j(2*l2, 1, 2*l1, 0, 0, 0); // integration of theta
+               double fac_l = c3j*c3j;
+               double fac_r=0.; 
+               for(int i=0; i<nr; i++){    // integration of r
+                   fac_r += R_obt[index_obt2][i] * r[i] * R_obt[index_obt1][i] ;
+               }
+               fac_r *= dr;
+               H_dipole[index] = fac*fac_l*fac_r;
+               index++;
+            }   // end of election rule
+            index_obt2++;
+         } // end of l2
+       }  // end of n2 for continuum states
+
+       index_obt1++;   // accumulated from bound states
+     }  // end of l1
+   }  // end of n1 for continuum states
+
+
+ }  // end of function
+
+
+
+
+}  // end of namepsace
+
+
+
