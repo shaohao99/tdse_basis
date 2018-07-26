@@ -1,2 +1,12 @@
 # tdse_basis
-Solve Time-dependent Schrodinger Equation (TDSE) using a numerical basis in Hilbert Space. The program is based on MPI and PETSc libraries.
+Solve Time-dependent Schrodinger Equation (TDSE) using a numerical basis in Hilbert Space. 
+
+The program is based on MPI and PETSc libraries.
+
+npsflib-basis: This directory includes source code of core functions. It is built as a library and will be used by a main program.
+
+example: This directory includes basic examples of main program.
+
+ais: This directory includes an example to calculate attosecond transient absoprtion for autoinoization states of He atom. 
+
+ne_absorption: This directory includes an example to calculate attosecond transient absoprtion for Ne atom. 
