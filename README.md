@@ -10,3 +10,5 @@ example: This directory includes basic examples of main program.
 ais: This directory includes an example to calculate attosecond transient absoprtion for autoinoization states of He atom. 
 
 ne_absorption: This directory includes an example to calculate attosecond transient absoprtion for Ne atom. 
+
+Reference: Phys. Rev. A 86, 013410 (2012).
