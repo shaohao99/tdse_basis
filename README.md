@@ -1,7 +1,7 @@
 # tdse_basis
 Solve Time-dependent Schrodinger Equation (TDSE) using a numerical basis in Hilbert Space. 
 
-The program is based on MPI and PETSc libraries.
+The program is based on MPI and PETSc libraries. It runs on multiple nodes of a computer cluster.
 
 npsflib-basis: This directory includes source code of core functions. It is built as a library and will be used by a main program.
 
