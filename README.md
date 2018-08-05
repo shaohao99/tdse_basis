@@ -7,9 +7,9 @@ npsflib-basis: This directory includes source code of core functions. It is buil
 
 example: This directory includes basic examples of main program.
 
-ais: This directory includes an example to calculate attosecond transient absoprtion for autoinoization states of He atom. 
+ais: This directory includes an example to calculate attosecond transient absoprtion of autoinoization states of He atom. 
 
-ne_absorption: This directory includes an example to calculate attosecond transient absoprtion for Ne atom. 
+ne_absorption: This directory includes an example to calculate attosecond transient absoprtion of Ne atom. 
 
 Reference: Phys. Rev. A 86, 013410 (2012).
 
